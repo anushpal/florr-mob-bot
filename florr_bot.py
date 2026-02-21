@@ -11,7 +11,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Configuration
-BOT_TOKEN = "MTQ3NDg5MTkxMzkyMzY2MjAwNg.GsgdG6.ojf0wZqh_YvUZH9dpPsGLKNgWIkT9NhGS1bB1E"
+BOT_TOKEN = "MTQ3NDg5MTkxMzkyMzY2MjAwNg.G_snR8.ScycqvYZGwzVcdTLfMBsgjJn-XM3i7Ht52MP5A"
 SERVER_ID = 1473465801536307200
 CHANNEL_ID = 1473465801536307203
 WEBSITE_URL = "https://mobs.ashish.top/"
