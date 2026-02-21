@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import aiohttp
 import json
+import os
 from datetime import datetime
 
 # Bot setup
@@ -9,8 +10,8 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Configuration
-BOT_TOKEN = "MTQ3NDg5MTkxMzkyMzY2MjAwNg.G_snR8.ScycqvYZGwzVcdTLfMBsgjJn-XM3i7Ht52MP5A"  # Replace this with your actual token
+# Configuration - Get token from environment variable
+BOT_TOKEN = os.getenv("DISCORD_TOKEN")
 SERVER_ID = 1473465801536307200
 CHANNEL_ID = 1473465801536307203
 WEBSITE_URL = "https://mobs.ashish.top/"
@@ -81,6 +82,7 @@ async def monitor_mobs():
         print(f"Error in monitor_mobs: {e}")
 
 # Run the bot
-bot.run(BOT_TOKEN)
-
-
+if BOT_TOKEN:
+    bot.run(BOT_TOKEN)
+else:
+    print("ERROR: DISCORD_TOKEN environment variable not set!")
