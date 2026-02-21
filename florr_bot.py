@@ -1,5 +1,7 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
+import aiohttp
+from bs4 import BeautifulSoup
 import os
 
 # Bot setup
@@ -7,67 +9,77 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Configuration - Get token from environment variable
+# Configuration
 BOT_TOKEN = os.getenv("DISCORD_TOKEN")
-
-# Source channel (where the other bot posts alerts)
-SOURCE_SERVER_ID = 1464027414953857159
-SOURCE_CHANNEL_ID = 1467606628173086770
-
-# Destination channel (where we relay alerts)
 DEST_CHANNEL_ID = 1473465801536307203
+WEBSITE_URL = "https://mobs.ashish.top/"
+
+# Track previous mob states
+mob_states = {}
+
+async def get_mob_data():
+    """Fetch and parse mob data from the website"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(WEBSITE_URL, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    mobs = {}
+                    
+                    # Try to find mob data in the page
+                    # Look for any text that contains mob names
+                    text = soup.get_text().lower()
+                    
+                    # Common florr.io mob names to search for
+                    mob_names = ['petal', 'wasp', 'bee', 'ant', 'termite', 'mosquito', 
+                                 'ladybug', 'spider', 'moth', 'tick', 'fly', 'hornets',
+                                 'soldier termite', 'baby termite', 'super']
+                    
+                    for mob in mob_names:
+                        if mob in text:
+                            mobs[mob] = "active"
+                    
+                    return mobs
+    except Exception as e:
+        print(f"Error fetching mob data: {e}")
+    return {}
 
 @bot.event
 async def on_ready():
     print(f"{bot.user} has logged in!")
-    print(f"Listening to channel {SOURCE_CHANNEL_ID} in server {SOURCE_SERVER_ID}")
-    print(f"Relaying to channel {DEST_CHANNEL_ID}")
+    check_mobs.start()
 
-@bot.event
-async def on_message(message):
-    """Listen for messages in the source channel and relay them"""
-    
-    # Don't relay our own messages
-    if message.author == bot.user:
-        return
-    
-    # Check if message is from the source channel
-    if message.channel.id == SOURCE_CHANNEL_ID:
-        dest_channel = bot.get_channel(DEST_CHANNEL_ID)
+@tasks.loop(seconds=10)
+async def check_mobs():
+    """Check for new mobs every 10 seconds"""
+    try:
+        current_mobs = await get_mob_data()
         
-        if not dest_channel:
-            print(f"Error: Destination channel {DEST_CHANNEL_ID} not found")
+        if not current_mobs:
+            print("No mob data found")
             return
         
-        # Check for embeds (the mob alerts are embed messages)
-        if message.embeds:
-            for embed in message.embeds:
-                # Check if it's a super mob alert
-                if embed.title and ("super" in embed.title.lower() or "spawn" in embed.title.lower()):
-                    # Create a relay message
-                    embed_text = f"🚨 **SUPER MOB ALERT!** 🚨\n"
-                    
-                    if embed.title:
-                        embed_text += f"**{embed.title}**\n"
-                    if embed.description:
-                        embed_text += f"{embed.description}\n"
-                    
-                    # Add field values
-                    if embed.fields:
-                        for field in embed.fields:
-                            embed_text += f"**{field.name}:** {field.value}\n"
-                    
-                    await dest_channel.send(embed_text)
-                    print(f"Relayed super mob alert: {embed.title}")
+        dest_channel = bot.get_channel(DEST_CHANNEL_ID)
+        if not dest_channel:
+            print(f"Error: Destination channel not found")
+            return
         
-        # Also check plain text messages just in case
-        elif message.content:
-            content = message.content.lower()
-            if any(keyword in content for keyword in ["super", "spawn", "mob alert"]):
-                await dest_channel.send(f"📢 **Mob Alert:**\n{message.content}")
-                print(f"Relayed text message: {message.content[:50]}...")
+        # Check for new mobs
+        for mob_name, status in current_mobs.items():
+            if mob_name not in mob_states:
+                # New mob detected!
+                await dest_channel.send(f"🚨 **SUPER MOB ALERT!** 🚨\n**{mob_name}** has spawned!")
+                print(f"Alert sent for: {mob_name}")
+                mob_states[mob_name] = status
+            elif mob_states[mob_name] != status:
+                # Status changed
+                await dest_channel.send(f"📢 **{mob_name}** status: {status}")
+                mob_states[mob_name] = status
     
-    await bot.process_commands(message)
+    except Exception as e:
+        print(f"Error in check_mobs: {e}")
 
 # Run the bot
 if BOT_TOKEN:
