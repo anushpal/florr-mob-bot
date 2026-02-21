@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands, tasks
-import asyncio
-from playwright.async_api import async_playwright
+import aiohttp
 import json
 from datetime import datetime
 
@@ -11,7 +10,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Configuration
-BOT_TOKEN = "MTQ3NDg5MTkxMzkyMzY2MjAwNg.G_snR8.ScycqvYZGwzVcdTLfMBsgjJn-XM3i7Ht52MP5A"
+BOT_TOKEN = "MTQ3NDg5MTkxMzkyMzY2MjAwNg.G_snR8.ScycqvYZGwzVcdTLfMBsgjJn-XM3i7Ht52MP5A"  # Replace this with your actual token
 SERVER_ID = 1473465801536307200
 CHANNEL_ID = 1473465801536307203
 WEBSITE_URL = "https://mobs.ashish.top/"
@@ -20,54 +19,47 @@ WEBSITE_URL = "https://mobs.ashish.top/"
 mob_states = {}
 
 async def get_mob_data():
-    """Scrape mob data from the website using browser automation"""
+    """Fetch mob data from the website"""
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
-            page = await browser.new_page()
-            await page.goto(WEBSITE_URL, wait_until="networkidle")
-            
-            # Wait for mob data to load
-            await page.wait_for_timeout(2000)
-            
-            # Extract mob data from the page
-            mob_data = await page.evaluate("""
-                () => {
-                    const mobs = {};
-                    // Look for mob elements - adjust selectors based on actual page structure
-                    const mobElements = document.querySelectorAll('[class*="mob"], [class*="status"]');
-                    
-                    mobElements.forEach(el => {
-                        const name = el.textContent.trim();
-                        const status = el.getAttribute('class') || 'unknown';
-                        if (name) {
-                            mobs[name] = status;
-                        }
-                    });
-                    
-                    return mobs;
-                }
-            """)
-            
-            await browser.close()
-            return mob_data
+        async with aiohttp.ClientSession() as session:
+            async with session.get(WEBSITE_URL, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    html = await resp.text()
+                    # Try to find mob data in the HTML
+                    # This is a basic approach - you may need to adjust based on actual page structure
+                    return parse_mob_data(html)
     except Exception as e:
-        print(f"Error scraping website: {e}")
-        return {}
+        print(f"Error fetching website: {e}")
+    return {}
+
+def parse_mob_data(html):
+    """Parse mob data from HTML - adjust based on actual page structure"""
+    mobs = {}
+    try:
+        # Look for common patterns that might contain mob data
+        # This is a placeholder - you'll need to adjust based on actual HTML structure
+        if "petal" in html.lower():
+            mobs["petal"] = "alive"
+        if "wasp" in html.lower():
+            mobs["wasp"] = "alive"
+        # Add more mob patterns as needed
+    except Exception as e:
+        print(f"Error parsing mob data: {e}")
+    return mobs
 
 @bot.event
 async def on_ready():
     print(f"{bot.user} has logged in!")
     monitor_mobs.start()
 
-@tasks.loop(seconds=10)
+@tasks.loop(seconds=15)
 async def monitor_mobs():
-    """Check for mob changes every 10 seconds"""
+    """Check for mob changes every 15 seconds"""
     try:
         current_mobs = await get_mob_data()
         
         if not current_mobs:
-            print("No mob data found")
+            print("No mob data found - website may be loading or structure changed")
             return
         
         # Check for new or changed mobs
@@ -90,3 +82,5 @@ async def monitor_mobs():
 
 # Run the bot
 bot.run(BOT_TOKEN)
+
+
