@@ -1,9 +1,6 @@
 import discord
-from discord.ext import commands, tasks
-import aiohttp
-import json
+from discord.ext import commands
 import os
-from datetime import datetime
 
 # Bot setup
 intents = discord.Intents.default()
@@ -12,74 +9,42 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Configuration - Get token from environment variable
 BOT_TOKEN = os.getenv("DISCORD_TOKEN")
-SERVER_ID = 1473465801536307200
-CHANNEL_ID = 1473465801536307203
-WEBSITE_URL = "https://mobs.ashish.top/"
 
-# Store previous mob states to detect changes
-mob_states = {}
+# Source channel (where the other bot posts alerts)
+SOURCE_SERVER_ID = 1464027414953857159
+SOURCE_CHANNEL_ID = 1467606628173086770
 
-async def get_mob_data():
-    """Fetch mob data from the website"""
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(WEBSITE_URL, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 200:
-                    html = await resp.text()
-                    # Try to find mob data in the HTML
-                    # This is a basic approach - you may need to adjust based on actual page structure
-                    return parse_mob_data(html)
-    except Exception as e:
-        print(f"Error fetching website: {e}")
-    return {}
-
-def parse_mob_data(html):
-    """Parse mob data from HTML - adjust based on actual page structure"""
-    mobs = {}
-    try:
-        # Look for common patterns that might contain mob data
-        # This is a placeholder - you'll need to adjust based on actual HTML structure
-        if "petal" in html.lower():
-            mobs["petal"] = "alive"
-        if "wasp" in html.lower():
-            mobs["wasp"] = "alive"
-        # Add more mob patterns as needed
-    except Exception as e:
-        print(f"Error parsing mob data: {e}")
-    return mobs
+# Destination channel (where we relay alerts)
+DEST_CHANNEL_ID = 1473465801536307203
 
 @bot.event
 async def on_ready():
     print(f"{bot.user} has logged in!")
-    monitor_mobs.start()
+    print(f"Listening to channel {SOURCE_CHANNEL_ID} in server {SOURCE_SERVER_ID}")
+    print(f"Relaying to channel {DEST_CHANNEL_ID}")
 
-@tasks.loop(seconds=15)
-async def monitor_mobs():
-    """Check for mob changes every 15 seconds"""
-    try:
-        current_mobs = await get_mob_data()
-        
-        if not current_mobs:
-            print("No mob data found - website may be loading or structure changed")
-            return
-        
-        # Check for new or changed mobs
-        for mob_name, mob_status in current_mobs.items():
-            if mob_name not in mob_states:
-                # New mob spawned!
-                channel = bot.get_channel(CHANNEL_ID)
-                if channel:
-                    await channel.send(f"🚨 **SUPER MOB ALERT!** 🚨\n{mob_name} has spawned!\nStatus: {mob_status}")
-                mob_states[mob_name] = mob_status
-            elif mob_states[mob_name] != mob_status:
-                # Mob status changed
-                channel = bot.get_channel(CHANNEL_ID)
-                if channel:
-                    await channel.send(f"📢 **{mob_name}** status changed to: {mob_status}")
-                mob_states[mob_name] = mob_status
+@bot.event
+async def on_message(message):
+    """Listen for messages in the source channel and relay them"""
     
-    except Exception as e:
-        print(f"Error in monitor_mobs: {e}")
+    # Don't relay our own messages
+    if message.author == bot.user:
+        return
+    
+    # Check if message is from the source channel
+    if message.channel.id == SOURCE_CHANNEL_ID:
+        # Check if it's a mob alert (contains keywords)
+        content = message.content.lower()
+        if any(keyword in content for keyword in ["mob", "spawn", "alert", "super"]):
+            # Get destination channel
+            dest_channel = bot.get_channel(DEST_CHANNEL_ID)
+            
+            if dest_channel:
+                # Relay the message
+                await dest_channel.send(f"📢 **Mob Alert from other server:**\n{message.content}")
+                print(f"Relayed message: {message.content[:50]}...")
+    
+    await bot.process_commands(message)
 
 # Run the bot
 if BOT_TOKEN:
