@@ -33,16 +33,39 @@ async def on_message(message):
     
     # Check if message is from the source channel
     if message.channel.id == SOURCE_CHANNEL_ID:
-        # Check if it's a mob alert (contains keywords)
-        content = message.content.lower()
-        if any(keyword in content for keyword in ["mob", "spawn", "alert", "super"]):
-            # Get destination channel
-            dest_channel = bot.get_channel(DEST_CHANNEL_ID)
-            
-            if dest_channel:
-                # Relay the message
-                await dest_channel.send(f"📢 **Mob Alert from other server:**\n{message.content}")
-                print(f"Relayed message: {message.content[:50]}...")
+        dest_channel = bot.get_channel(DEST_CHANNEL_ID)
+        
+        if not dest_channel:
+            print(f"Error: Destination channel {DEST_CHANNEL_ID} not found")
+            return
+        
+        # Check for embeds (the mob alerts are embed messages)
+        if message.embeds:
+            for embed in message.embeds:
+                # Check if it's a super mob alert
+                if embed.title and ("super" in embed.title.lower() or "spawn" in embed.title.lower()):
+                    # Create a relay message
+                    embed_text = f"🚨 **SUPER MOB ALERT!** 🚨\n"
+                    
+                    if embed.title:
+                        embed_text += f"**{embed.title}**\n"
+                    if embed.description:
+                        embed_text += f"{embed.description}\n"
+                    
+                    # Add field values
+                    if embed.fields:
+                        for field in embed.fields:
+                            embed_text += f"**{field.name}:** {field.value}\n"
+                    
+                    await dest_channel.send(embed_text)
+                    print(f"Relayed super mob alert: {embed.title}")
+        
+        # Also check plain text messages just in case
+        elif message.content:
+            content = message.content.lower()
+            if any(keyword in content for keyword in ["super", "spawn", "mob alert"]):
+                await dest_channel.send(f"📢 **Mob Alert:**\n{message.content}")
+                print(f"Relayed text message: {message.content[:50]}...")
     
     await bot.process_commands(message)
 
