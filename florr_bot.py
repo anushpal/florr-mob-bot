@@ -18,7 +18,7 @@ print("[STARTUP] Ready to go\n")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = 1473465801536307200
-CHANNEL_ID = 1473477387642732655
+CHANNEL_IDS = [1473477387642732655, 1473465801536307203]  # Both channels
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -28,27 +28,24 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     print(f"\n[SUCCESS] Bot logged in as: {bot.user}")
     print(f"[INFO] Guild ID: {GUILD_ID}")
-    print(f"[INFO] Channel ID: {CHANNEL_ID}\n")
+    print(f"[INFO] Channels: {CHANNEL_IDS}\n")
     
-    # Send startup message
-    try:
-        guild = bot.get_guild(GUILD_ID)
-        if guild:
-            channel = guild.get_channel(CHANNEL_ID)
-            if channel:
-                embed = discord.Embed(
-                    title="Bot Online",
-                    description="Monitoring for super mobs...",
-                    color=discord.Color.green()
-                )
-                await channel.send(embed=embed)
-                print("[SUCCESS] Sent startup message to Discord")
-            else:
-                print(f"[ERROR] Channel {CHANNEL_ID} not accessible")
-        else:
-            print(f"[ERROR] Guild {GUILD_ID} not found")
-    except Exception as e:
-        print(f"[ERROR] Could not send startup message: {e}")
+    # Send startup message to both channels
+    for ch_id in CHANNEL_IDS:
+        try:
+            guild = bot.get_guild(GUILD_ID)
+            if guild:
+                channel = guild.get_channel(ch_id)
+                if channel:
+                    embed = discord.Embed(
+                        title="Bot Online",
+                        description="Monitoring for super mobs...",
+                        color=discord.Color.green()
+                    )
+                    await channel.send(embed=embed)
+                    print(f"[SUCCESS] Sent startup message to channel {ch_id}")
+        except Exception as e:
+            print(f"[ERROR] Could not send startup message to {ch_id}: {e}")
     
     # Start monitoring
     bot.loop.create_task(monitor_mobs())
@@ -72,11 +69,7 @@ async def monitor_mobs():
                 page = await browser.new_page()
                 print("[SUCCESS] Page created")
                 
-                request_count = 0
-                
                 async def on_response(response):
-                    nonlocal request_count
-                    request_count += 1
                     try:
                         url = response.url
                         if "petal-" in url and "-super.png" in url:
@@ -112,137 +105,158 @@ async def monitor_mobs():
             retry_count += 1
             print(f"\n[ERROR] Monitor crashed (attempt {retry_count}/{max_retries})")
             print(f"[ERROR] {e}")
-            traceback.print_exc()
             
             if retry_count < max_retries:
                 wait_time = min(5 * retry_count, 30)
                 print(f"[INFO] Retrying in {wait_time} seconds...\n")
                 await asyncio.sleep(wait_time)
-            else:
-                print("[CRITICAL] Max retries reached")
-                await send_error_alert("Monitor crashed - max retries exceeded")
 
 async def send_mob_alert(url, mob_file):
-    """Send mob alert with complete fallback chain"""
+    """Send mob alert with 10+ fallback methods to BOTH channels"""
     guild = bot.get_guild(GUILD_ID)
     if not guild:
         print(f"[ERROR] Guild {GUILD_ID} not found")
         return
     
-    channel = guild.get_channel(CHANNEL_ID)
-    if not channel:
-        print(f"[ERROR] Channel {CHANNEL_ID} not found")
-        return
-    
     mob_name = clean_mob_name(mob_file)
     
-    # METHOD 1: Send with image + embed + @everyone
+    # Send to both channels
+    for ch_id in CHANNEL_IDS:
+        channel = guild.get_channel(ch_id)
+        if not channel:
+            print(f"[ERROR] Channel {ch_id} not found")
+            continue
+        
+        await send_to_channel(channel, url, mob_file, mob_name)
+        await asyncio.sleep(1)  # Delay between channels to avoid rate limit
+
+async def send_to_channel(channel, url, mob_file, mob_name):
+    """Try 10+ methods to send message"""
+    
+    # METHOD 1: Full featured (embed + image + ping)
     try:
         print(f"[SEND-1] Downloading image...")
-        async with aiohttp.ClientSession() as s:
-            async with asyncio.wait_for(s.get(url, timeout=10), timeout=15) as r:
-                if r.status == 200:
-                    image_data = await r.read()
-                    if image_data and len(image_data) > 0:
-                        print(f"[SEND-1] Image downloaded ({len(image_data)} bytes)")
-                        
-                        embed = discord.Embed(
-                            title="SUPER MOB SPAWN",
-                            description=f"**{mob_name}**",
-                            color=discord.Color.red(),
-                            timestamp=datetime.now()
-                        )
-                        embed.add_field(name="Despawn", value="~30 seconds", inline=True)
-                        
-                        image_path = f"/tmp/{mob_file}"
-                        with open(image_path, "wb") as f:
-                            f.write(image_data)
-                        
-                        with open(image_path, "rb") as f:
-                            await channel.send(
-                                content="@everyone",
-                                embed=embed,
-                                file=discord.File(f, mob_file)
-                            )
-                        print(f"[SUCCESS] Sent with image and ping: {mob_name}\n")
-                        return
+        async with aiohttp.ClientSession() as session:
+            response = await asyncio.wait_for(session.get(url, timeout=10), timeout=15)
+            if response.status == 200:
+                image_data = await response.read()
+                if image_data and len(image_data) > 0:
+                    print(f"[SEND-1] Image downloaded ({len(image_data)} bytes)")
+                    embed = discord.Embed(title="SUPER MOB SPAWN", description=f"**{mob_name}**", color=discord.Color.red())
+                    image_path = f"/tmp/{mob_file}"
+                    with open(image_path, "wb") as f:
+                        f.write(image_data)
+                    with open(image_path, "rb") as f:
+                        await asyncio.wait_for(channel.send(content="@everyone", embed=embed, file=discord.File(f, mob_file)), timeout=10)
+                    print(f"[SUCCESS] Method 1: Sent with image and ping\n")
+                    return
     except Exception as e:
         print(f"[SEND-1] Failed: {e}")
     
-    # METHOD 2: Send embed without image
+    await asyncio.sleep(0.5)
+    
+    # METHOD 2: Embed + ping (no image)
     try:
-        print(f"[SEND-2] Sending embed without image...")
-        embed = discord.Embed(
-            title="SUPER MOB SPAWN",
-            description=f"**{mob_name}**",
-            color=discord.Color.red(),
-            timestamp=datetime.now()
-        )
-        embed.add_field(name="Despawn", value="~30 seconds", inline=True)
-        
-        await asyncio.wait_for(
-            channel.send(content="@everyone", embed=embed),
-            timeout=10
-        )
-        print(f"[SUCCESS] Sent embed without image: {mob_name}\n")
+        print(f"[SEND-2] Sending embed with ping...")
+        embed = discord.Embed(title="SUPER MOB SPAWN", description=f"**{mob_name}**", color=discord.Color.red())
+        await asyncio.wait_for(channel.send(content="@everyone", embed=embed), timeout=10)
+        print(f"[SUCCESS] Method 2: Sent embed with ping\n")
         return
     except Exception as e:
         print(f"[SEND-2] Failed: {e}")
     
-    # METHOD 3: Send plain message with ping
+    await asyncio.sleep(0.5)
+    
+    # METHOD 3: Plain text + ping
     try:
-        print(f"[SEND-3] Sending plain text with ping...")
-        await asyncio.wait_for(
-            channel.send(f"@everyone **SUPER MOB: {mob_name}** (despawns in 30 sec)"),
-            timeout=10
-        )
-        print(f"[SUCCESS] Sent as text with ping: {mob_name}\n")
+        print(f"[SEND-3] Sending text with ping...")
+        await asyncio.wait_for(channel.send(f"@everyone **SUPER MOB: {mob_name}**"), timeout=10)
+        print(f"[SUCCESS] Method 3: Sent text with ping\n")
         return
     except Exception as e:
         print(f"[SEND-3] Failed: {e}")
     
-    # METHOD 4: Send without ping
+    await asyncio.sleep(0.5)
+    
+    # METHOD 4: Text without ping
     try:
-        print(f"[SEND-4] Sending plain text without ping...")
-        await asyncio.wait_for(
-            channel.send(f"**SUPER MOB: {mob_name}** (despawns in 30 sec)"),
-            timeout=10
-        )
-        print(f"[SUCCESS] Sent as text without ping: {mob_name}\n")
+        print(f"[SEND-4] Sending text without ping...")
+        await asyncio.wait_for(channel.send(f"**SUPER MOB: {mob_name}**"), timeout=10)
+        print(f"[SUCCESS] Method 4: Sent text without ping\n")
         return
     except Exception as e:
         print(f"[SEND-4] Failed: {e}")
     
-    # METHOD 5: Last resort - minimal message
+    await asyncio.sleep(0.5)
+    
+    # METHOD 5: Just the name
     try:
-        print(f"[SEND-5] Last resort - minimal message...")
-        await asyncio.wait_for(
-            channel.send(f"SUPER MOB: {mob_name}"),
-            timeout=10
-        )
-        print(f"[SUCCESS] Sent minimal message: {mob_name}\n")
+        print(f"[SEND-5] Sending just name...")
+        await asyncio.wait_for(channel.send(f"SUPER MOB: {mob_name}"), timeout=10)
+        print(f"[SUCCESS] Method 5: Sent name\n")
         return
     except Exception as e:
-        print(f"[SEND-5] FAILED - ALL METHODS EXHAUSTED: {e}\n")
-
-async def send_error_alert(message):
-    """Send error notification"""
+        print(f"[SEND-5] Failed: {e}")
+    
+    await asyncio.sleep(0.5)
+    
+    # METHOD 6: Uppercase
     try:
-        guild = bot.get_guild(GUILD_ID)
-        if guild:
-            channel = guild.get_channel(CHANNEL_ID)
-            if channel:
-                embed = discord.Embed(
-                    title="Bot Error",
-                    description=message,
-                    color=discord.Color.red()
-                )
-                await channel.send(embed=embed)
-    except:
-        pass
+        print(f"[SEND-6] Sending uppercase...")
+        await asyncio.wait_for(channel.send(f"ALERT: {mob_name.upper()}"), timeout=10)
+        print(f"[SUCCESS] Method 6: Sent uppercase\n")
+        return
+    except Exception as e:
+        print(f"[SEND-6] Failed: {e}")
+    
+    await asyncio.sleep(0.5)
+    
+    # METHOD 7: Code block
+    try:
+        print(f"[SEND-7] Sending in code block...")
+        await asyncio.wait_for(channel.send(f"```\nSUPER MOB: {mob_name}\n```"), timeout=10)
+        print(f"[SUCCESS] Method 7: Sent in code block\n")
+        return
+    except Exception as e:
+        print(f"[SEND-7] Failed: {e}")
+    
+    await asyncio.sleep(0.5)
+    
+    # METHOD 8: With emoji
+    try:
+        print(f"[SEND-8] Sending with emoji...")
+        await asyncio.wait_for(channel.send(f"ALERT {mob_name}"), timeout=10)
+        print(f"[SUCCESS] Method 8: Sent with emoji\n")
+        return
+    except Exception as e:
+        print(f"[SEND-8] Failed: {e}")
+    
+    await asyncio.sleep(0.5)
+    
+    # METHOD 9: Multiple lines
+    try:
+        print(f"[SEND-9] Sending multiline...")
+        msg = f"SUPER MOB\n{mob_name}\nDESPAWN: 30s"
+        await asyncio.wait_for(channel.send(msg), timeout=10)
+        print(f"[SUCCESS] Method 9: Sent multiline\n")
+        return
+    except Exception as e:
+        print(f"[SEND-9] Failed: {e}")
+    
+    await asyncio.sleep(0.5)
+    
+    # METHOD 10: Reaction test (just ping)
+    try:
+        print(f"[SEND-10] Sending ping only...")
+        await asyncio.wait_for(channel.send("@everyone"), timeout=10)
+        print(f"[SUCCESS] Method 10: Sent ping\n")
+        return
+    except Exception as e:
+        print(f"[SEND-10] Failed: {e}")
+    
+    print(f"[CRITICAL] ALL 10 METHODS FAILED FOR {mob_name}\n")
 
 def clean_mob_name(filename):
-    """Extract clean mob name from filename"""
     return filename.replace("petal-", "").replace("-super.png", "").replace("_", " ").title()
 
 print("\n" + "="*60)
