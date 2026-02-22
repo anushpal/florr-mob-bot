@@ -9,13 +9,12 @@ import aiohttp
 import traceback
 from datetime import datetime
 
-# Install playwright browsers on startup
+# Install dependencies AND browsers
+print("[STARTUP] Installing system dependencies...")
+subprocess.run(["playwright", "install-deps"], check=False, timeout=300, capture_output=True)
 print("[STARTUP] Installing Playwright browsers...")
-try:
-    subprocess.run(["playwright", "install"], check=True, timeout=300, capture_output=True)
-    print("[STARTUP] Browsers installed successfully")
-except Exception as e:
-    print(f"[WARNING] Browser install issue: {e}")
+subprocess.run(["playwright", "install"], check=False, timeout=300, capture_output=True)
+print("[STARTUP] Ready to go\n")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = 1473465801536307200
