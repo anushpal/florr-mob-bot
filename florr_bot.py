@@ -14,7 +14,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Bot online: {bot.user}")
+    print(f"Bot online: {bot.user}")
     bot.loop.create_task(monitor_mobs())
 
 async def monitor_mobs():
@@ -24,7 +24,7 @@ async def monitor_mobs():
             page = await browser.new_page()
             detected = set()
             
-            print("⏳ Opening mobs.ashish.top...")
+            print("Opening mobs.ashish.top...")
             
             async def on_response(response):
                 url = response.url
@@ -32,7 +32,7 @@ async def monitor_mobs():
                     mob_file = url.split("/")[-1].split("?")[0]
                     if mob_file not in detected:
                         detected.add(mob_file)
-                        print(f"🎯 SUPER MOB FOUND: {mob_file}")
+                        print(f"SUPER MOB FOUND: {mob_file}")
                         asyncio.create_task(send_msg(url, mob_file))
             
             page.on("response", on_response)
@@ -40,13 +40,13 @@ async def monitor_mobs():
             try:
                 await asyncio.wait_for(page.goto("https://mobs.ashish.top/", wait_until="networkidle"), timeout=15)
             except asyncio.TimeoutError:
-                print("⚠️ Page load timeout, continuing anyway...")
+                print("Page load timeout, continuing anyway...")
             
-            print("📡 LISTENING FOR SUPER MOBS...")
+            print("LISTENING FOR SUPER MOBS...")
             while True:
                 await asyncio.sleep(1)
     except Exception as e:
-        print(f"❌ Monitor crashed: {e}")
+        print(f"Monitor crashed: {e}")
 
 async def send_msg(url, mob_file):
     try:
@@ -58,25 +58,15 @@ async def send_msg(url, mob_file):
                 data = await r.read()
         
         name = mob_file.replace("petal-", "").replace("-super.png", "").title()
-        embed = discord.Embed(title="🚨 SUPER MOB 🚨", description=name, color=discord.Color.red())
+        embed = discord.Embed(title="SUPER MOB SPAWN", description=name, color=discord.Color.red())
         
         with open(f"/tmp/{mob_file}", "wb") as f:
             f.write(data)
         
         with open(f"/tmp/{mob_file}", "rb") as f:
             await channel.send(f"@everyone", embed=embed, file=discord.File(f, mob_file))
-        print(f"✅ Sent to Discord: {name}")
+        print(f"Sent to Discord: {name}")
     except Exception as e:
-        print(f"❌ Send error: {e}")
+        print(f"Send error: {e}")
 
 bot.run(TOKEN)
-```
-
-4. **Commit changes**
-5. Wait for redeploy
-6. Tell me what you see in the logs now
-
-Should see:
-```
-⏳ Opening mobs.ashish.top...
-📡 LISTENING FOR SUPER MOBS...
